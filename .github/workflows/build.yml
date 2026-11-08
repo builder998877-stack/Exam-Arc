@@ -50,11 +50,10 @@ jobs:
           chmod +x gradlew
           for i in 1 2 3 4; do ./gradlew assembleDebug --no-daemon && break; echo "Attempt $i failed, trying again in 20 seconds"; sleep 20; done
           cd ..
-          cp android/app/build/outputs/apk/debug/app-debug.apk NEET-Prep.apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk Exam-Arc.apk
       - name: Publish the download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete app --yes --cleanup-tag || true
-          gh release create app NEET-Prep.apk --title "NEET Prep app" --notes "Latest Android app: download NEET-Prep.apk"
-          
+          gh release create app Exam-Arc.apk --title "Exam Arc app" --notes "Latest Android app: download Exam-Arc.apk"
