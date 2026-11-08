@@ -1,0 +1,60 @@
+name: Build Android app
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build the app
+        run: |
+          pip install pillow
+          mkdir -p www
+          cp app-index.html www/index.html
+          npm install
+          npx cap add android
+          sed -i 's/networkTimeout=.*/networkTimeout=180000/' android/gradle/wrapper/gradle-wrapper.properties
+          ok=0
+          for U in https://services.gradle.org/distributions/gradle-8.2.1-bin.zip https://mirrors.cloud.tencent.com/gradle/gradle-8.2.1-bin.zip; do
+            for t in 1 2 3; do
+              echo "Downloading Gradle from $U (try $t)"
+              if curl -fsSL --max-time 150 -o /tmp/g.zip "$U" && unzip -tq /tmp/g.zip >/dev/null 2>&1; then ok=1; break 2; fi
+              sleep 10
+            done
+          done
+          if [ "$ok" = "1" ]; then
+            echo "Gradle downloaded, using the local copy"
+            sed -i "s#^distributionUrl=.*#distributionUrl=file:///tmp/g.zip#" android/gradle/wrapper/gradle-wrapper.properties
+          else
+            echo "Could not download Gradle from any source"
+            exit 1
+          fi
+          cat android/gradle/wrapper/gradle-wrapper.properties
+          python make_assets.py
+          npx cap sync android
+          cd android
+          chmod +x gradlew
+          for i in 1 2 3 4; do ./gradlew assembleDebug --no-daemon && break; echo "Attempt $i failed, trying again in 20 seconds"; sleep 20; done
+          cd ..
+          cp android/app/build/outputs/apk/debug/app-debug.apk NEET-Prep.apk
+      - name: Publish the download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete app --yes --cleanup-tag || true
+          gh release create app NEET-Prep.apk --title "NEET Prep app" --notes "Latest Android app: download NEET-Prep.apk"
+          
