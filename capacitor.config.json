@@ -1,0 +1,7 @@
+{
+  "appId": "com.neetprep.app",
+  "appName": "NEET Prep",
+  "webDir": "www",
+  "backgroundColor": "#fcf8f1",
+  "server": { "androidScheme": "https" }
+}
