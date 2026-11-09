@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>EXAM Platform</title>
+<title>Exam-Arc</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   /* ===== PREMIUM LIQUID GLASS THEME (look only, no behaviour changes) ===== */
@@ -338,7 +338,7 @@
 
   <div id="frameNote" class="hidden">
     You're viewing this inside the Hugging Face page. For sign-in to work,
-    <a href="https://gd0722-EXAM-platform.hf.space" target="_blank" rel="noopener">open the site on its own page</a>.
+    <a href="https://gd0722-neet-platform.hf.space" target="_blank" rel="noopener">open the site on its own page</a>.
   </div>
 
   <!-- HOME -->
@@ -352,10 +352,8 @@
     </header>
 
     <div class="hero glass">
-      <h1>Crack <span class="rgb-text">EXAM</span> with focused practice.</h1>
+      <h1>Crack <span class="rgb-text">Any Exam</span> with focused practice.</h1>
       <p>Timed tests, distraction-free mode, instant results and explanations.</p>
-      <div class="chips">
-      </div>
     </div>
 
     <h2 class="sec"><span>Take Test</span></h2>
@@ -514,7 +512,7 @@
 const SUPABASE_URL = "https://btpksnwqckqlvmjqmceu.supabase.co";
 const SUPABASE_KEY = "sb_publishable_lw003iYpncT0HzHDVBFBqA_O_0OvjeL";
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const WORKER_URL = "https://gd0722-EXAM-worker.hf.space";
+const WORKER_URL = "https://gd0722-neet-worker.hf.space";
 const FN_EXPLAIN = SUPABASE_URL + "/functions/v1/explain";
 const FREE_AI = 10;
 const NUM = {A:"1", B:"2", C:"3", D:"4"};   // options are shown as 1 to 4, like the printed paper
@@ -614,7 +612,7 @@ $("aForgot").onclick=async(e)=>{
 };
 
 /* ---------- Sign in with Google ---------- */
-const SITE_URL="https://gd0722-EXAM-platform.hf.space";
+const SITE_URL="https://gd0722-neet-platform.hf.space";
 const inFrame=(()=>{ try{ return window.self!==window.top; }catch(e){ return true; } })();
 $("gBtn").onclick=async()=>{
   if(inFrame){
