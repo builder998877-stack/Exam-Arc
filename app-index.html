@@ -708,7 +708,6 @@ $("uSend").onclick=async()=>{
   if(!isPdf(qf)){ upMsg("Please choose the question paper as a PDF.","err"); return; }
   if(qf.size>MAX_BYTES || (kf && kf.size>MAX_BYTES)){ upMsg("Each file must be smaller than 40 MB.","err"); return; }
   if(kf && !isPdf(kf)){ upMsg("The answer key must be a PDF, or type the answers instead.","err"); return; }
-  if(!kf && !kt){ upMsg("Please add the answer key: a PDF, or type the answers.","err"); return; }
   if(type==="Part" && !chap){ upMsg("Please tell us which chapters the test covers.","err"); return; }
   if(!$("uConsent").checked){ upMsg("Please confirm the copyright statement.","err"); return; }
 
@@ -907,7 +906,8 @@ function drawQ(){
   const im=$("qimg");
   if(q.image_url){ im.src=q.image_url; im.classList.remove("hidden"); } else { im.removeAttribute("src"); im.classList.add("hidden"); }
   const box=$("opts"); box.innerHTML="";
-  [["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]].forEach(([k,v])=>{
+  if(q.qtype==="int") drawIntBox(box);
+  (q.qtype==="int"?[]:[["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]]).forEach(([k,v])=>{
     if(!v && !q.image_url) return;
     const b=el("button","opt"+(answers[cur]===k?" sel":""));
     b.appendChild(el("span","k",NUM[k])); b.appendChild(el("span",null,v||"Option "+NUM[k]));
@@ -1005,7 +1005,7 @@ function finish(){
   let r=0,w=0,s=0,code="";
   T.questions.forEach((q,i)=>{
     const a=answers[i];
-    if(!a || !q.correct_option){ s++; code+="S"; } else if(a===q.correct_option){ r++; code+="R"; } else { w++; code+="W"; }
+    if(!a || !hasKey(q)){ s++; code+="S"; } else if(isRight(q,a)){ r++; code+="R"; } else { w++; code+="W"; }
   });
   $("scoreBig").textContent=(r*4-w)+" / "+(T.questions.length*4);
   $("sRight").textContent=r; $("sWrong").textContent=w; $("sSkip").textContent=s;
@@ -1016,13 +1016,14 @@ function finish(){
     c.appendChild(el("div","qnum","Q"+q.question_number));
     if(q.question_text) c.appendChild(el("div","qtext",q.question_text));
     if(q.image_url){ const im=el("img","qimg"); im.src=q.image_url; im.loading="lazy"; c.appendChild(im); }
-    [["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]].forEach(([k,v])=>{
+    (q.qtype==="int"?[]:[["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]]).forEach(([k,v])=>{
       if(!v && !q.image_url) return;
       let cls="opt";
       if(k===q.correct_option) cls+=" right";
       else if(answers[i]===k) cls+=" wrong";
       const b=el("div",cls); b.appendChild(el("span","k",NUM[k])); b.appendChild(el("span",null,v||"Option "+NUM[k])); c.appendChild(b);
     });
+    if(q.qtype==="int") addIntReview(c,q,answers[i]);
     addExplanation(c,q);
     rev.appendChild(c);
   });
@@ -1137,15 +1138,37 @@ function showSavedResult(t,a,qs){
     c.appendChild(el("div","qState "+st.toLowerCase(), st==="R"?"✔ You got this right":st==="W"?"✘ You got this wrong":"Not answered"));
     if(q.question_text) c.appendChild(el("div","qtext",q.question_text));
     if(q.image_url){ const im=el("img","qimg"); im.src=q.image_url; im.loading="lazy"; c.appendChild(im); }
-    [["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]].forEach(([k,v])=>{
+    (q.qtype==="int"?[]:[["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]]).forEach(([k,v])=>{
       if(!v && !q.image_url) return;
       const b=el("div","opt"+(k===q.correct_option?" right":"")); b.appendChild(el("span","k",NUM[k])); b.appendChild(el("span",null,v||"Option "+NUM[k])); c.appendChild(b);
     });
+    if(q.qtype==="int") addIntReview(c,q,null);
     addExplanation(c,q);
     rev.appendChild(c);
   });
   refreshAiLabels();
   show("result");
+}
+/* ---------- numerical-answer questions (added) ---------- */
+function hasKey(q){ return q.qtype==="int" ? (q.correct_value!==null && q.correct_value!==undefined && String(q.correct_value)!=="") : !!q.correct_option; }
+function isRight(q,a){
+  if(q.qtype==="int"){ const x=parseFloat(a), y=parseFloat(q.correct_value); return isFinite(x) && isFinite(y) && Math.abs(x-y)<1e-6; }
+  return a===q.correct_option;
+}
+function drawIntBox(box){
+  const wrap=el("div"); wrap.style.marginTop="14px";
+  wrap.appendChild(el("div","meta","Numerical answer: type the number"));
+  const inp=document.createElement("input"); inp.type="text"; inp.inputMode="decimal"; inp.autocomplete="off"; inp.placeholder="Your answer";
+  inp.value=answers[cur]||"";
+  inp.style.cssText="width:100%;margin-top:8px;padding:14px 16px;font-size:20px;border-radius:16px;border:1.5px solid rgba(150,130,160,.45);background:rgba(255,255,255,.85);color:inherit";
+  inp.oninput=()=>{ inp.value=inp.value.replace(/[^0-9.\-]/g,""); const v=inp.value.trim(); if(v) answers[cur]=v; else delete answers[cur]; paintPalette(); };
+  wrap.appendChild(inp); box.appendChild(wrap);
+}
+function addIntReview(c,q,ans){
+  const b=el("div","opt right"); b.appendChild(el("span",null,"Correct answer: "+(q.correct_value!==null&&q.correct_value!==undefined?q.correct_value:"?"))); c.appendChild(b);
+  if(ans!==null && ans!==undefined && ans!==""){
+    const y=el("div","opt"+(isRight(q,ans)?" right":" wrong")); y.appendChild(el("span",null,"Your answer: "+ans)); c.appendChild(y);
+  }
 }
 loadExams();
 
