@@ -341,6 +341,7 @@
   .attMeta{color:var(--good);font-size:13px;font-weight:600;margin-top:4px}
   .qState{font-weight:700;font-size:13px;margin:6px 0}
   .qState.r{color:var(--good)}.qState.w{color:var(--bad)}.qState.s{color:var(--muted)}
+  .keyEx{padding:10px 14px;margin-bottom:8px;border-radius:18px;background:rgba(255,255,255,.6);font-size:14px;line-height:1.6;box-shadow:inset 0 2px 4px rgba(140,115,110,.12)}
 </style>
 </head>
 <body>
@@ -521,16 +522,31 @@
     </div>
     <label class="f">Question paper (PDF)</label>
     <input type="file" id="uQ" accept="application/pdf">
-    <label class="f">Answer key (PDF)</label>
-    <input type="file" id="uK" accept="application/pdf">
-    <label class="f">…or type the answers (1-A, 2-C, 3-B …)</label>
-    <textarea id="uText" placeholder="1-A, 2-C, 3-B …"></textarea>
+    <label class="f">Answer key (paste it as text)</label>
+    <textarea id="uText" placeholder="1 (A)  2 (D)  3 (80) …"></textarea>
+    <div class="meta" style="margin-top:6px"><span id="uKeyCount" style="color:var(--good);font-weight:600"></span> <a href="#" id="uKeyHelp" style="color:var(--accent2);font-weight:600">How to paste your answer key</a></div>
     <label class="consent"><input type="checkbox" id="uConsent"><span>I confirm that I own or have the right to use this paper, and I accept responsibility for its copyright. I understand that scanned or unusual papers may be read by an AI service (Google Gemini) to prepare them.</span></label>
     <div class="row">
       <button class="btn" id="uClose">Close</button>
       <button class="btn primary" id="uSend">Upload</button>
     </div>
     <div class="msg" id="uMsg"></div>
+  </div>
+</div>
+
+<!-- ANSWER KEY HELP POPUP -->
+<div class="overlay hidden" id="keyModal" style="z-index:60">
+  <div class="modal glass">
+    <h3>How to paste your answer key</h3>
+    <p class="s">Only a pasted (written) answer key is used. We never read answers or explanations from a PDF, even if your question PDF has them inside.</p>
+    <div class="meta" style="line-height:1.7;margin-bottom:10px">
+      Write the <b>question number first</b>, then its answer. Separate answers with a space, comma or new line.
+    </div>
+    <div class="keyEx"><b>Option type (NEET etc.)</b><br>1 (A) &nbsp; 2 (D) &nbsp; 3 (B)<br>1-A, 2-D, 3-B<br>Q1 (A) &nbsp; Q2 (D)<br>1. A &nbsp; 2. D<br>1 (3) &nbsp; 2 (1) &nbsp; (options as numbers 1 to 4)</div>
+    <div class="keyEx"><b>Numerical type (JEE etc.)</b><br>3 (80) &nbsp; 4 (2.5)<br>Q3: 80 &nbsp; Q4: 2.5<br>If your key uses letters for options, a number is read as a numerical answer.</div>
+    <div class="meta" style="margin:10px 0">Please do not paste explanations or solutions, only the answers. Questions that have no answer here will be skipped when you take the test.</div>
+    <div class="meta" style="margin-bottom:14px"><b>Thank you</b> for taking a minute to do this. It keeps your results accurate. 🙏</div>
+    <button class="btn primary" style="width:100%" id="kClose" type="button">Got it</button>
   </div>
 </div>
 
@@ -693,21 +709,55 @@ async function loadAiUsed(){
    UPLOAD YOUR OWN PAPER
    ============================================================ */
 function upMsg(t,kind){ const m=$("uMsg"); m.textContent=t; m.className="msg "+(kind||""); }
-function openUpload(){ upMsg(""); $("upModal").classList.remove("hidden"); }
+function openUpload(){ upMsg(""); keyHelpShown=false; $("upModal").classList.remove("hidden"); }
 $("ownPaperCard").onclick=()=>{ if(!user){ afterAuth=openUpload; openAuth(); } else openUpload(); };
 $("uClose").onclick=()=>$("upModal").classList.add("hidden");
 $("uType").onchange=()=>$("uChapWrap").classList.toggle("hidden",$("uType").value!=="Part");
 const isPdf=f=>f && (f.type==="application/pdf" || /\.pdf$/i.test(f.name));
 const MAX_BYTES=40*1024*1024;
 
+/* ---- written answer key: reader + help popup ---- */
+function parseKeyText(text){
+  var t=String(text||"");
+  try{ t=t.normalize("NFKC"); }catch(e){}
+  t=t.replace(/[\u2010-\u2015\u2212]/g,"-").replace(/[\[{]/g,"(").replace(/[\]}]/g,")")
+     .replace(/\b(?:correct\s+)?(?:answer|ans|option|opt)\b\s*[:.]?/gi," ")
+     .replace(/\)/g,") ").replace(/[,;|\r\n\t]+/g," ");
+  var re=/(^|[^A-Za-z0-9])(?:(?:q[a-z]{0,8}|no)\.?\s*)?(\d{1,3})(?!\d)\s*[.):=\-]*\s*\(?\s*([A-Da-d]|-?\d+(?:\.\d+)?)\s*\)?(?![A-Za-z0-9])/gi;
+  var found=[],m;
+  while((m=re.exec(t))){ found.push([parseInt(m[2],10),m[3]]); }
+  var hasLetter=found.some(function(f){ return /^[A-Za-z]$/.test(f[1]); });
+  var out={};
+  found.forEach(function(f){
+    if(f[0]<1) return;
+    var v=f[1], val;
+    if(/^[A-Za-z]$/.test(v)) val=v.toUpperCase();
+    else if(/^[1-4]$/.test(v) && !hasLetter) val="ABCD".charAt(parseInt(v,10)-1);
+    else val=v.replace(/^\+/,"");
+    out[f[0]]=val;
+  });
+  return out;
+}
+var keyHelpShown=false;
+function openKeyHelp(){ keyHelpShown=true; $("keyModal").classList.remove("hidden"); }
+function keyCount(){
+  var n=Object.keys(parseKeyText($("uText").value)).length, box=$("uKeyCount");
+  box.textContent = n ? "✔ "+n+" answer"+(n===1?"":"s")+" recognised." : "";
+}
+$("kClose").onclick=()=>$("keyModal").classList.add("hidden");
+$("uKeyHelp").onclick=e=>{ e.preventDefault(); openKeyHelp(); };
+$("uText").addEventListener("focus",()=>{ if(!keyHelpShown) openKeyHelp(); });
+$("uText").addEventListener("input",keyCount);
+
 $("uSend").onclick=async()=>{
   if(!user){ upMsg("Please sign in first.","err"); return; }
-  const name=$("uName").value.trim(), qf=$("uQ").files[0], kf=$("uK").files[0], kt=$("uText").value.trim();
+  const name=$("uName").value.trim(), qf=$("uQ").files[0], kt=$("uText").value.trim();
   const type=$("uType").value, chap=$("uChap").value.trim(), mins=parseInt($("uMin").value)||180;
   if(!name){ upMsg("Please give your test a name.","err"); return; }
   if(!isPdf(qf)){ upMsg("Please choose the question paper as a PDF.","err"); return; }
-  if(qf.size>MAX_BYTES || (kf && kf.size>MAX_BYTES)){ upMsg("Each file must be smaller than 40 MB.","err"); return; }
-  if(kf && !isPdf(kf)){ upMsg("The answer key must be a PDF, or type the answers instead.","err"); return; }
+  if(qf.size>MAX_BYTES){ upMsg("The question paper must be smaller than 40 MB.","err"); return; }
+  if(!kt){ upMsg("Please paste your answer key as text, like 1 (A), 2 (D), 3 (80).","err"); openKeyHelp(); return; }
+  if(!Object.keys(parseKeyText(kt)).length){ upMsg("We could not read any answers from what you pasted. Please check the instructions.","err"); openKeyHelp(); return; }
   if(type==="Part" && !chap){ upMsg("Please tell us which chapters the test covers.","err"); return; }
   if(!$("uConsent").checked){ upMsg("Please confirm the copyright statement.","err"); return; }
 
@@ -716,12 +766,7 @@ $("uSend").onclick=async()=>{
     const folder="user/"+user.id+"/"+(crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36).slice(2))+"/";
     let up=await db.storage.from("papers").upload(folder+"question.pdf", qf, {contentType:"application/pdf"});
     if(up.error) throw new Error("Could not upload the question paper. "+up.error.message);
-    let kPath=null;
-    if(kf){
-      up=await db.storage.from("papers").upload(folder+"key.pdf", kf, {contentType:"application/pdf"});
-      if(up.error) throw new Error("Could not upload the answer key. "+up.error.message);
-      kPath=folder+"key.pdf";
-    }
+    const kPath=null;   // answer keys are only accepted as pasted text
     const { data:t, error } = await db.from("tests").insert({
       name, syllabus_type:type, syllabus_chapters:type==="Part"?chap:null, duration_minutes:mins,
       source:"user", owner_id:user.id, is_published:false,
@@ -734,7 +779,7 @@ $("uSend").onclick=async()=>{
     if(jb.error) throw new Error(jb.error.message);
     wakeWorker();
     upMsg("Done! We're checking your paper now. You can close this page. It will appear under My Papers when it is ready.","ok");
-    $("uQ").value=""; $("uK").value=""; $("uText").value=""; $("uName").value=""; $("uConsent").checked=false;
+    $("uQ").value=""; $("uText").value=""; keyCount(); $("uName").value=""; $("uConsent").checked=false;
     loadMine();
   }catch(e){
     upMsg((e&&e.message)||"Something went wrong. Please try again.","err");
@@ -1000,6 +1045,26 @@ function addExplanation(card, q){
   holder.appendChild(btn);
 }
 
+/* ---------- "Send to review": Gemini double-checks one question once; later requests are only recorded ---------- */
+function addReviewBtn(card, q){
+  if(!q.id) return;   // sample test
+  const row=el("div"); row.style.marginTop="12px";
+  const btn=el("button","btn sm","⚑ Send to review"), note=el("div","meta","");
+  btn.onclick=async()=>{
+    if(!user){ afterAuth=null; openAuth(); return; }
+    btn.disabled=true; btn.textContent="Sending…"; note.textContent="";
+    try{
+      const r=await db.rpc("request_review",{p_question:String(q.id)});
+      if(r.error) throw new Error(r.error.message);
+      btn.textContent="✔ Sent to review team";
+    }catch(e){
+      btn.disabled=false; btn.textContent="⚑ Send to review";
+      note.textContent="Could not send right now. Please try again.";
+    }
+  };
+  row.appendChild(btn); row.appendChild(note); card.appendChild(row);
+}
+
 function finish(){
   clearInterval(tick);
   let r=0,w=0,s=0,code="";
@@ -1025,6 +1090,7 @@ function finish(){
     });
     if(q.qtype==="int") addIntReview(c,q,answers[i]);
     addExplanation(c,q);
+    addReviewBtn(c,q);
     rev.appendChild(c);
   });
   refreshAiLabels();
@@ -1144,6 +1210,7 @@ function showSavedResult(t,a,qs){
     });
     if(q.qtype==="int") addIntReview(c,q,null);
     addExplanation(c,q);
+    addReviewBtn(c,q);
     rev.appendChild(c);
   });
   refreshAiLabels();
@@ -1264,9 +1331,10 @@ wakeWorker();
   try{
     var A=C.Plugins&&C.Plugins.App;
     if(A&&A.addListener)A.addListener("backButton",function(){
-      var ov=[].slice.call(document.querySelectorAll(".overlay")).filter(function(o){return !o.classList.contains("hidden");})[0];
+      var ov=[].slice.call(document.querySelectorAll(".overlay")).filter(function(o){return !o.classList.contains("hidden");}).pop();
       if(ov){
         if(ov.id==="authModal")g("aClose").click();
+        else if(ov.id==="keyModal")g("kClose").click();
         else if(ov.id==="upModal")g("uClose").click();
         return;
       }
