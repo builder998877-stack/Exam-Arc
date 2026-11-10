@@ -331,6 +331,16 @@
   .paneIn{animation:paneIn .38s var(--ease)}
   .slideIn{animation:slideIn .38s var(--ease)}
   @media(prefers-reduced-motion:reduce){.paneIn,.slideIn{animation:none!important}}
+
+  /* ===== EXAM PICKER + FIRST ATTEMPT (added) ===== */
+  #examBox{padding:6px 16px 18px;margin-bottom:6px}
+  #examBox h2.sec{margin-top:14px}
+  .card.examOn{outline:2px solid var(--accent);outline-offset:-2px}
+  #examBar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 2px 0}
+  #examBar b{font-size:17px}
+  .attMeta{color:var(--good);font-size:13px;font-weight:600;margin-top:4px}
+  .qState{font-weight:700;font-size:13px;margin:6px 0}
+  .qState.r{color:var(--good)}.qState.w{color:var(--bad)}.qState.s{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -354,6 +364,18 @@
     <div class="hero glass">
       <h1>Crack <span class="rgb-text">Any Exam</span> with focused practice.</h1>
       <p>Timed tests, distraction-free mode, instant results and explanations.</p>
+    </div>
+
+    <div id="examBox" class="glass hidden">
+      <div id="examPick">
+        <h2 class="sec"><span>Choose your exam</span></h2>
+        <div id="examGrid" class="grid"></div>
+        <div style="margin-top:10px"><button class="btn sm hidden" id="examCancel" type="button">Cancel</button></div>
+      </div>
+      <div id="examBar" class="hidden">
+        <div><div class="meta">Preparing for</div><b id="examName"></b></div>
+        <button class="btn sm" id="examChange" type="button">Change exam</button>
+      </div>
     </div>
 
     <h2 class="sec"><span>Take Test</span></h2>
@@ -417,7 +439,11 @@
         <div class="stat"><b id="sWrong" style="color:var(--bad)"></b>Wrong</div>
         <div class="stat"><b id="sSkip"></b>Skipped</div>
       </div>
-      <div style="margin-top:16px"><button class="btn primary" style="width:100%" id="homeBtn">Back to Home</button></div>
+      <div class="meta" id="saveNote" style="text-align:center;margin-top:12px"></div>
+      <div style="margin-top:14px;display:grid;gap:10px">
+        <button class="btn primary hidden" style="width:100%" id="reBtn" type="button">🔁 Re-attempt this test</button>
+        <button class="btn primary" style="width:100%" id="homeBtn">Back to Home</button>
+      </div>
     </div>
     <h2 class="sec"><span>Review</span></h2>
     <div class="meta" id="aiNote" style="margin:0 4px 8px;color:var(--muted);font-size:13px"></div>
@@ -627,7 +653,8 @@ $("gBtn").onclick=async()=>{
 };
 
 function onUser(u){
-  user=u; renderAuth(); loadMine(); loadAiUsed();
+  const prevId=user?user.id:null; user=u; if((u?u.id:null)!==prevId){ attempts={}; attemptsLoaded=false; }
+  renderAuth(); loadAiUsed(); syncExam(); loadAttempts().then(()=>{ loadMine(); drawPublished(); });
   if(u){
     let f=null;
     try{ f=sessionStorage.getItem("afterLogin"); sessionStorage.removeItem("afterLogin"); }catch(e){}
@@ -701,7 +728,7 @@ $("uSend").onclick=async()=>{
       source:"user", owner_id:user.id, is_published:false,
       process_status:"waiting", progress:0, status_text:"Waiting in line",
       question_pdf_path:folder+"question.pdf", key_pdf_path:kPath, key_text:kt||null,
-      consent_at:new Date().toISOString()
+      consent_at:new Date().toISOString(), exam_id:examId||null
     }).select().single();
     if(error) throw new Error(error.message);
     const jb=await db.from("jobs").insert({test_id:t.id});
@@ -735,6 +762,7 @@ async function loadMine(){
     const c=el("div","card glass"), top=el("div","row"), left=el("div");
     left.appendChild(el("h3",null,t.name));
     left.appendChild(el("div","meta",(t.syllabus_type?t.syllabus_type+" syllabus · ":"")+t.duration_minutes+" min"));
+    if(attempts[t.id]) left.appendChild(el("div","attMeta",attemptLine(attempts[t.id])));
     top.appendChild(left);
     if(st==="ready") top.appendChild(el("span","pill live","Ready"));
     else if(st==="waiting") top.appendChild(el("span","pill wait","Waiting"));
@@ -757,7 +785,7 @@ async function loadMine(){
     }
     const acts=el("div","acts");
     if(st==="ready"){
-      const go=el("button","btn primary sm","Take test"); go.onclick=()=>startFromDb(t); acts.appendChild(go);
+      const go=el("button","btn primary sm",attempts[t.id]?"View result":"Take test"); go.onclick=()=>startFromDb(t); acts.appendChild(go);
       [[2,60],[3,90],[4,120]].forEach(([m,d])=>{
         const ex=el("button","btn sm","+"+m+" months");
         ex.onclick=async()=>{
@@ -796,27 +824,30 @@ setInterval(()=>{ if(minePending && user && !document.hidden && !$("home").class
 /* ============================================================
    AVAILABLE TESTS (Full / Part syllabus)
    ============================================================ */
-let published=[], filterType="Full";
+let published=[], filterType="Full", pubLoaded=false;
 async function loadPublished(){
   const box=$("testList");
   try{
-    const { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes")
+    const { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id")
       .eq("is_published",true).order("created_at",{ascending:false});
     if(error) throw error;
-    published=data||[]; drawPublished();
+    published=data||[]; pubLoaded=true; drawPublished();
   }catch(e){
     box.replaceChildren(el("div","empty glass","Could not load tests. Please check your internet and refresh."));
   }
 }
 function drawPublished(){
+  if(!pubLoaded) return;
   const box=$("testList"); const frag=document.createDocumentFragment();
-  const list=published.filter(t=>(t.syllabus_type||"Full")===filterType);
+  if(exams.length && !examId){ box.replaceChildren(el("div","empty glass","Choose your exam first (top of the Home page) to see its tests.")); return; }
+  const list=published.filter(t=>(t.syllabus_type||"Full")===filterType && (!exams.length || t.exam_id===examId));
   if(!list.length) frag.appendChild(el("div","empty glass","No "+(filterType==="Full"?"full":"part")+"-syllabus tests yet. Check back soon!"));
   list.forEach(t=>{
     const c=el("div","card glass click");
     c.appendChild(el("h3",null,t.name));
     c.appendChild(el("div","meta",(filterType==="Full"?"Full syllabus":"Part syllabus")+" · "+t.duration_minutes+" min"));
     if(filterType==="Part" && t.syllabus_chapters) c.appendChild(el("div","meta","Covers: "+t.syllabus_chapters));
+    if(attempts[t.id]) c.appendChild(el("div","attMeta",attemptLine(attempts[t.id])));
     c.onclick=()=>startFromDb(t);
     frag.appendChild(c);
   });
@@ -830,9 +861,11 @@ document.querySelectorAll(".tab").forEach(b=>{
 });
 
 async function startFromDb(t){
+  if(user && !attemptsLoaded) await loadAttempts();
   const { data, error } = await db.from("questions").select("*").eq("test_id",t.id).order("question_number").limit(1000);
   if(error || !data || !data.length){ alert("This test has no questions yet."); return; }
-  startTest({name:t.name, duration_minutes:t.duration_minutes, questions:data});
+  if(attempts[t.id]){ showSavedResult(t,attempts[t.id],data); return; }
+  startTest({id:t.id, name:t.name, duration_minutes:t.duration_minutes, questions:data});
 }
 $("demoCard").onclick=()=>startTest(SAMPLE);
 
@@ -969,13 +1002,14 @@ function addExplanation(card, q){
 
 function finish(){
   clearInterval(tick);
-  let r=0,w=0,s=0;
+  let r=0,w=0,s=0,code="";
   T.questions.forEach((q,i)=>{
     const a=answers[i];
-    if(!a || !q.correct_option) s++; else if(a===q.correct_option) r++; else w++;
+    if(!a || !q.correct_option){ s++; code+="S"; } else if(a===q.correct_option){ r++; code+="R"; } else { w++; code+="W"; }
   });
   $("scoreBig").textContent=(r*4-w)+" / "+(T.questions.length*4);
   $("sRight").textContent=r; $("sWrong").textContent=w; $("sSkip").textContent=s;
+  afterFinish(r,w,s,code);
   const rev=$("review"); rev.innerHTML=""; aiButtons=[];
   T.questions.forEach((q,i)=>{
     const c=el("div","qbox glass");
@@ -996,6 +1030,124 @@ function finish(){
   show("result");
 }
 $("homeBtn").onclick=()=>show("home");
+
+/* ============================================================
+   EXAM PICKER + FIRST-ATTEMPT RECORDS (added)
+   ============================================================ */
+const EXAM_KEY="examArcExam";
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+let exams=[], examId=parseInt(lsGet(EXAM_KEY))||null, examPicking=false, examSyncUser=null;
+let attempts={}, attemptsLoaded=false;
+
+async function loadExams(){
+  try{
+    const { data, error } = await db.from("exams").select("id,name").order("name");
+    if(error) throw error;
+    exams=data||[];
+  }catch(e){ exams=[]; }
+  if(!exams.some(x=>x.id===examId)) examId=null;
+  drawExam(); drawPublished();
+}
+function drawExam(){
+  const box=$("examBox");
+  if(!exams.length){ box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const cur=exams.find(x=>x.id===examId), picking=!cur||examPicking;
+  $("examPick").classList.toggle("hidden",!picking);
+  $("examBar").classList.toggle("hidden",picking);
+  $("examCancel").classList.toggle("hidden",!cur);
+  if(cur) $("examName").textContent=cur.name;
+  const frag=document.createDocumentFragment();
+  exams.forEach(x=>{
+    const c=el("div","card glass click"+(x.id===examId?" examOn":""));
+    c.appendChild(el("h3",null,x.name));
+    c.appendChild(el("div","meta",x.id===examId?"Selected":"Tap to select"));
+    c.onclick=()=>chooseExam(x.id);
+    frag.appendChild(c);
+  });
+  $("examGrid").replaceChildren(frag);
+}
+async function chooseExam(id){
+  examId=id; examPicking=false; lsSet(EXAM_KEY,String(id));
+  drawExam(); drawPublished();
+  if(user){ try{ await db.from("user_exam").upsert({user_id:user.id,exam_id:id},{onConflict:"user_id"}); }catch(e){} }
+}
+$("examChange").onclick=()=>{ examPicking=true; drawExam(); };
+$("examCancel").onclick=()=>{ examPicking=false; drawExam(); };
+async function syncExam(){
+  if(!user){ examSyncUser=null; return; }
+  if(examSyncUser===user.id) return;
+  examSyncUser=user.id;
+  try{
+    const { data } = await db.from("user_exam").select("exam_id").eq("user_id",user.id).maybeSingle();
+    if(data && data.exam_id){
+      examId=data.exam_id; lsSet(EXAM_KEY,String(examId)); examPicking=false;
+      if(exams.length && !exams.some(x=>x.id===examId)) examId=null;
+      drawExam(); drawPublished();
+    }else if(examId){
+      await db.from("user_exam").upsert({user_id:user.id,exam_id:examId},{onConflict:"user_id"});
+    }
+  }catch(e){}
+}
+
+async function loadAttempts(){
+  if(!user){ attempts={}; attemptsLoaded=true; return; }
+  try{
+    const { data, error } = await db.from("test_attempts").select("test_id,score,res,prev").eq("user_id",user.id);
+    if(error) throw error;
+    const m={}; (data||[]).forEach(r=>{ m[r.test_id]={score:r.score,res:r.res||"",prev:r.prev||[]}; });
+    attempts=m;
+  }catch(e){}
+  attemptsLoaded=true;
+}
+function attemptLine(a){ return "✔ Last score: "+a.score+" / "+(a.res.length*4)+" · "+(a.prev.length+1)+" attempt"+(a.prev.length?"s":"")+" · tap to view or re-attempt"; }
+function historyText(a){ return a.prev.length ? "Attempt "+(a.prev.length+1)+" (latest). Earlier marks: "+a.prev.join(", ")+"." : "Attempt 1."; }
+
+function afterFinish(r,w,s,code){
+  const note=$("saveNote"), re=$("reBtn");
+  note.textContent="";
+  re.classList.toggle("hidden",!(T&&T.id));
+  re.onclick=()=>startTest(T);
+  if(!T.id) return;                      // sample test: nothing to save
+  if(!user){ note.textContent="Sign in to save your result and see it again later."; return; }
+  saveFirst(T.id,r*4-w,code,note);
+}
+async function saveFirst(testId,score,code,note){
+  try{
+    const { error } = await db.rpc("save_attempt",{p_test:testId,p_score:score,p_res:code});
+    if(error) throw error;
+    await loadAttempts(); drawPublished(); loadMine();
+    note.textContent="Saved. "+historyText(attempts[testId])+" Only your latest attempt keeps the right/wrong details.";
+  }catch(e){ note.textContent="Could not save this result right now."; }
+}
+function showSavedResult(t,a,qs){
+  T={id:t.id,name:t.name,duration_minutes:t.duration_minutes,questions:qs};
+  const code=a.res||""; let r=0,w=0,s=0;
+  qs.forEach((q,i)=>{ const c=code[i]||"S"; if(c==="R")r++; else if(c==="W")w++; else s++; });
+  $("scoreBig").textContent=a.score+" / "+(qs.length*4);
+  $("sRight").textContent=r; $("sWrong").textContent=w; $("sSkip").textContent=s;
+  $("saveNote").textContent="Your latest attempt is shown. "+historyText(a)+" Earlier attempts keep only their marks.";
+  const re=$("reBtn"); re.classList.remove("hidden"); re.onclick=()=>startTest(T);
+  const rev=$("review"); rev.innerHTML=""; aiButtons=[];
+  qs.forEach((q,i)=>{
+    const st=code[i]||"S";
+    const c=el("div","qbox glass");
+    c.appendChild(el("div","qnum","Q"+q.question_number));
+    c.appendChild(el("div","qState "+st.toLowerCase(), st==="R"?"✔ You got this right":st==="W"?"✘ You got this wrong":"Not answered"));
+    if(q.question_text) c.appendChild(el("div","qtext",q.question_text));
+    if(q.image_url){ const im=el("img","qimg"); im.src=q.image_url; im.loading="lazy"; c.appendChild(im); }
+    [["A",q.option_a],["B",q.option_b],["C",q.option_c],["D",q.option_d]].forEach(([k,v])=>{
+      if(!v && !q.image_url) return;
+      const b=el("div","opt"+(k===q.correct_option?" right":"")); b.appendChild(el("span","k",NUM[k])); b.appendChild(el("span",null,v||"Option "+NUM[k])); c.appendChild(b);
+    });
+    addExplanation(c,q);
+    rev.appendChild(c);
+  });
+  refreshAiLabels();
+  show("result");
+}
+loadExams();
 
 loadPublished();
 wakeWorker();
@@ -1052,7 +1204,7 @@ wakeWorker();
   function tag(el,p){if(el)el.setAttribute("data-pane",p);}
   tag(home.querySelector(".hero"),"home");tag(h2s[0],"home");tag(grids[0],"home");
   tag(h2s[1],"tests");tag(home.querySelector(".tabs"),"tests");tag(g("testList"),"tests");
-  tag(g("mineWrap"),"papers");
+  tag(g("mineWrap"),"papers");tag(g("examBox"),"home");
 
   var pane="home",navs=[].slice.call(document.querySelectorAll(".navb"));
   function replay(el){el.classList.remove("paneIn");void el.offsetWidth;el.classList.add("paneIn");}
