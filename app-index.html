@@ -347,6 +347,11 @@
   .aiHelp li{margin-bottom:6px}
   .aiHelp .btn{width:100%;margin-top:8px;font-size:16px;padding:14px 20px}
   .keyEx{padding:10px 14px;margin-bottom:8px;border-radius:18px;background:rgba(255,255,255,.6);font-size:14px;line-height:1.6;box-shadow:inset 0 2px 4px rgba(140,115,110,.12)}
+  /* ===== TERMS / CONSENT (added) ===== */
+  .legal h4{margin:14px 0 4px;font-size:15px}
+  .legal p,.legal li{font-size:13.5px;color:var(--muted);line-height:1.55}
+  .legal ul{padding-left:18px;margin:4px 0}
+  .tlink{color:var(--accent2);text-decoration:underline}
 </style>
 </head>
 <body>
@@ -488,10 +493,40 @@
       <input type="password" id="aPass2" autocomplete="new-password">
     </div>
     <div id="aForgotRow" style="margin-top:10px"><a href="#" id="aForgot" style="color:var(--accent2);font-size:14px">Forgot password?</a></div>
+    <label class="consent" style="margin:14px 0 0"><input type="checkbox" id="aAgree"><span>I agree to the <a href="#" class="tlink">Terms &amp; Privacy Notice</a>. I am 18 or older, or a parent/guardian has agreed for me. (Required to create an account or continue with Google.)</span></label>
     <div style="margin-top:16px"><button class="btn primary" style="width:100%" id="aGo" type="button">Sign in</button></div>
     <div class="hidden"><button id="aUp" type="button"></button><button id="aIn" type="button"></button></div>
     <div class="msg" id="aMsg"></div>
     <div style="margin-top:8px"><button class="btn sm" id="aClose">Close</button></div>
+  </div>
+</div>
+
+<!-- TERMS & CONSENT (added) -->
+<div class="overlay hidden" id="consentModal" style="z-index:90">
+  <div class="modal glass legal">
+    <h3>Before you continue</h3>
+    <p class="s">A quick, one-time confirmation about your data.</p>
+    <ul>
+      <li>We collect your email, your exam choice, the papers you upload, and your test attempts and scores, plus basic activity such as sign-in times, uploads and tests taken.</li>
+      <li>Only our own team can see, process and delete this data. We never sell it and never use it for advertising. The services that run the site (hosting, database, sign-in, AI) handle it only on our behalf.</li>
+      <li>If you upload a paper, you alone are responsible for it. You must own it or have the right to use it. We may remove any upload.</li>
+      <li>Uploaded papers, and the scores saved for them, are deleted automatically after a limited time. You can ask us to delete everything.</li>
+    </ul>
+    <p style="margin-top:8px"><a href="#" class="tlink" id="cRead">Read the full Terms &amp; Privacy Notice</a></p>
+    <label class="consent"><input type="checkbox" id="cAgree"><span>I have read and agree to the Terms &amp; Privacy Notice. I am 18 or older, or a parent/guardian has agreed for me.</span></label>
+    <div style="display:grid;gap:10px">
+      <button class="btn primary" id="cGo" type="button" disabled>Agree and continue</button>
+      <button class="btn sm" id="cOut" type="button">Sign out</button>
+    </div>
+    <div class="msg" id="cMsg"></div>
+  </div>
+</div>
+<div class="overlay hidden" id="termsModal" style="z-index:95">
+  <div class="modal glass legal">
+    <h3>Terms &amp; Privacy Notice</h3>
+    <p class="s" id="termsVer"></p>
+    <div id="termsBody"></div>
+    <div style="margin-top:14px"><button class="btn primary" style="width:100%" id="termsClose" type="button">Close</button></div>
   </div>
 </div>
 
@@ -624,6 +659,7 @@ $("aClose").onclick=closeAuth;
 
 async function doAuth(signUp){
   const email=$("aEmail").value.trim(), password=$("aPass").value;
+  if(signUp && !$("aAgree").checked){ authMsg("Please tick the box to agree to the Terms & Privacy Notice.","err"); return; }
   if(!email || password.length<6){ authMsg("Please enter your email and a password of at least 6 characters.","err"); return; }
   $("aIn").disabled=$("aUp").disabled=true; authMsg("Please wait…");
   const res = signUp ? await db.auth.signUp({email,password}) : await db.auth.signInWithPassword({email,password});
@@ -633,6 +669,7 @@ async function doAuth(signUp){
     authMsg(/invalid login/i.test(m) ? "Wrong email or password." : /already/i.test(m) ? "This email already has an account. Please sign in." : m,"err");
     return;
   }
+  if($("aAgree").checked) markAgreed();
   if(signUp && !res.data.session){ authMsg("Account created. Please check your email to confirm it, then sign in (CHECK SPAM FOLDER).","ok"); return; }
   $("aPass").value=""; closeAuth();
   const f=afterAuth; afterAuth=null; if(f) setTimeout(f,400);
@@ -673,6 +710,8 @@ $("aForgot").onclick=async(e)=>{
 const SITE_URL="https://gd0722-neet-platform.hf.space";
 const inFrame=(()=>{ try{ return window.self!==window.top; }catch(e){ return true; } })();
 $("gBtn").onclick=async()=>{
+  if(!$("aAgree").checked){ authMsg("Please tick the box to agree to the Terms & Privacy Notice first.","err"); return; }
+  markAgreed();
   if(inFrame){
     authMsg("Google sign-in needs the site's own page. Opening it in a new tab. Sign in there.","ok");
     window.open(SITE_URL,"_blank");
@@ -686,7 +725,7 @@ $("gBtn").onclick=async()=>{
 
 function onUser(u){
   const prevId=user?user.id:null; user=u; if((u?u.id:null)!==prevId){ attempts={}; attemptsLoaded=false; }
-  renderAuth(); loadAiUsed(); syncExam(); loadAttempts().then(()=>{ loadMine(); drawPublished(); });
+  renderAuth(); loadAiUsed(); syncExam(); ensureConsent(); loadAttempts().then(()=>{ loadMine(); drawPublished(); });
   if(u){
     let f=null;
     try{ f=sessionStorage.getItem("afterLogin"); sessionStorage.removeItem("afterLogin"); }catch(e){}
@@ -1295,6 +1334,80 @@ function addIntReview(c,q,ans){
     const y=el("div","opt"+(isRight(q,ans)?" right":" wrong")); y.appendChild(el("span",null,"Your answer: "+ans)); c.appendChild(y);
   }
 }
+/* ============================================================
+   TERMS, PRIVACY & ONE-TIME CONSENT (added)
+   ============================================================ */
+const TERMS_VERSION=1, TERMS_DATE="November 2026";      // raise TERMS_VERSION to ask everyone to agree again
+const LEGAL_CONTACT="okbroh4@gmail.com";           // <-- PUT YOUR REAL CONTACT EMAIL HERE
+const LEGAL_PLACE="India";                              // <-- country whose law applies
+const AGREE_KEY="examArcAgree";
+const TERMS_HTML=`
+<h4>1. Who we are</h4><p>This website and app ("the Platform") is run by its owner ("we", "us"). Contact: ${LEGAL_CONTACT}.</p>
+<h4>2. What we collect</h4><ul>
+<li>Account details: your email and how you signed in.</li>
+<li>Your chosen exam.</li>
+<li>Papers you upload (PDF/images) and the questions and answers prepared from them.</li>
+<li>Your test attempts: scores and which questions were right or wrong.</li>
+<li>Basic activity: sign-in times, uploads and tests taken, and technical information needed to run the Platform safely.</li></ul>
+<h4>3. Why we use it</h4><p>To run the Platform: show you tests, save your progress, prepare papers you upload, keep the service secure and prevent misuse, and improve it.</p>
+<h4>4. Who can see it</h4><p>Only our own team can view, process and delete your data. We do not sell your data, we do not use it for advertising, and we do not give it to anyone for their own purposes. The Platform runs on service providers (hosting, database, sign-in and, for some scanned papers and explanations, an AI service). They handle data only to provide the Platform for us. We may also disclose data if the law requires it.</p>
+<h4>5. Papers you upload: your responsibility</h4><ul>
+<li>You alone are fully responsible for anything you upload.</li>
+<li>You confirm you own it or have the right to use it, and that it does not break anyone's copyright or other rights, or any law.</li>
+<li>Do not upload unlawful, offensive or private content about other people.</li>
+<li>We do not check every upload. We may remove any upload or suspend any account at any time without notice.</li>
+<li>If a claim is made about your upload, you will deal with it and you will cover any loss or cost it causes us.</li>
+<li>You allow us to store and process your upload only to provide the service to you. Your uploads are not shown to other users.</li></ul>
+<h4>6. AI and accuracy</h4><p>Papers, answers and explanations may be prepared with the help of AI and can contain mistakes. Always check important answers yourself. Nothing here guarantees any exam result.</p>
+<h4>7. Keeping and deleting data</h4><p>Papers you upload are deleted automatically after a limited time (currently up to 90 days), and the scores saved for them are deleted with them. If we remove a test, its saved scores are removed too. You can ask us at any time to delete your account and data.</p>
+<h4>8. Your account</h4><p>Keep your password safe. Do not share your account. Do not copy, scrape, resell or share our tests and explanations, or try to break, overload or misuse the Platform. We may suspend or close accounts that do.</p>
+<h4>9. Our content</h4><p>The Platform, our tests, answer keys and explanations belong to us or our licensors. You may use them for your own practice only.</p>
+<h4>10. No guarantees; limits on our responsibility</h4><p>The Platform is a practice tool, is provided "as is", and is not connected with any exam authority. It may be unavailable or contain errors. To the fullest extent the law allows, we are not responsible for any loss arising from using it, including missed or wrong marks or results.</p>
+<h4>11. Children</h4><p>If you are under 18, a parent or guardian must read and agree to this notice for you.</p>
+<h4>12. Copyright complaints and data requests</h4><p>To report content, or to ask to see, correct or delete your data, write to ${LEGAL_CONTACT}.</p>
+<h4>13. Changes</h4><p>We may update this notice. If the change is important, we will ask you to agree again.</p>
+<h4>14. Governing law</h4><p>These terms are governed by the law of ${LEGAL_PLACE}.</p>
+<h4>15. Your agreement</h4><p>When you agree, we record that you did, with the version and the time.</p>`;
+
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+function markAgreed(){ lsSet(AGREE_KEY,TERMS_VERSION+"|"+Date.now()); }
+function agreedRecently(){ const v=(lsGet(AGREE_KEY)||"").split("|"); return parseInt(v[0])>=TERMS_VERSION && Date.now()-(parseInt(v[1])||0)<6048e5; }
+function openTerms(){ $("termsVer").textContent="Version "+TERMS_VERSION+" · "+TERMS_DATE; $("termsBody").innerHTML=TERMS_HTML; $("termsModal").classList.remove("hidden"); }
+document.addEventListener("click",e=>{ const a=e.target.closest&&e.target.closest(".tlink"); if(a){ e.preventDefault(); openTerms(); } });
+$("termsClose").onclick=()=>$("termsModal").classList.add("hidden");
+$("cRead").onclick=e=>{ e.preventDefault(); openTerms(); };
+
+let consentChecked=null;
+async function saveConsent(){
+  try{
+    const { error } = await db.from("user_consent").upsert({user_id:user.id,version:TERMS_VERSION,accepted_at:new Date().toISOString()},{onConflict:"user_id"});
+    return !error;
+  }catch(e){ return false; }
+}
+function showConsent(){
+  $("cAgree").checked=false; $("cGo").disabled=true; $("cMsg").textContent="";
+  $("consentModal").classList.remove("hidden");
+}
+async function ensureConsent(){
+  if(!user){ consentChecked=null; $("consentModal").classList.add("hidden"); return; }
+  if(consentChecked===user.id) return;
+  consentChecked=user.id;
+  try{
+    const { data, error } = await db.from("user_consent").select("version").eq("user_id",user.id).maybeSingle();
+    if(error) return;                                   // table missing or offline: never lock people out
+    if(data && data.version>=TERMS_VERSION){ lsDel(AGREE_KEY); return; }
+    if(agreedRecently()){ const ok=await saveConsent(); lsDel(AGREE_KEY); if(ok) return; }   // ticked on the sign-up form
+    showConsent();                                      // existing users, or anyone who has not agreed yet
+  }catch(e){}
+}
+$("cAgree").onchange=()=>{ $("cGo").disabled=!$("cAgree").checked; };
+$("cGo").onclick=async()=>{
+  $("cGo").disabled=true; $("cMsg").textContent="Saving…";
+  if(await saveConsent()){ $("consentModal").classList.add("hidden"); $("cMsg").textContent=""; }
+  else{ $("cMsg").textContent="Could not save right now. Please try again."; $("cGo").disabled=false; }
+};
+$("cOut").onclick=async()=>{ $("consentModal").classList.add("hidden"); await db.auth.signOut(); };
+
 loadExams();
 
 loadPublished();
