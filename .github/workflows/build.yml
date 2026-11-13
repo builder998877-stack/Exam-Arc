@@ -20,13 +20,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Use one fixed signing key (so updates install over the old app)
+        run: |
+          mkdir -p ~/.android
+          if [ -f signing/debug.keystore ]; then
+            cp signing/debug.keystore ~/.android/debug.keystore
+            echo "Using the saved signing key"
+          else
+            keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 36500 -dname "CN=Android Debug,O=Android,C=US"
+            mkdir -p signing
+            cp ~/.android/debug.keystore signing/debug.keystore
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add signing/debug.keystore
+            git commit -m "Save app signing key"
+            git push
+            echo "Created and saved a new signing key"
+          fi
       - name: Build the app
         run: |
           pip install pillow
           mkdir -p www
           cp app-index.html www/index.html
+          sed -i "s/__APP_BUILD__/${{ github.run_number }}/" www/index.html
           npm install
           npx cap add android
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/; s/versionName \"1.0\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
           sed -i 's/networkTimeout=.*/networkTimeout=180000/' android/gradle/wrapper/gradle-wrapper.properties
           ok=0
           for U in https://services.gradle.org/distributions/gradle-8.2.1-bin.zip https://mirrors.cloud.tencent.com/gradle/gradle-8.2.1-bin.zip; do
@@ -56,4 +75,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete app --yes --cleanup-tag || true
-          gh release create app Exam-Arc.apk --title "Exam-Arc app" --notes "Latest Android app: download Exam-Arc.apk"
+          gh release create app Exam-Arc.apk --title "Exam-Arc app" --notes "Latest Android app: build ${{ github.run_number }}. Download Exam-Arc.apk"
