@@ -762,9 +762,11 @@ $("pwSave").onclick=async()=>{
 };
 db.auth.getSession().then(({data})=>onUser(data.session?data.session.user:null));
 
+/* the daily quota runs on Indian time and resets at midnight (IST) */
+function istDayStartISO(){ var ms=Date.now()+19800000; return new Date(Math.floor(ms/86400000)*86400000-19800000).toISOString(); }
 async function loadAiUsed(){
   if(!user){ aiUsed=0; refreshAiLabels(); return; }
-  const { count } = await db.from("ai_explain_log").select("question_id",{count:"exact",head:true}).eq("user_id",user.id);
+  const { count } = await db.from("ai_explain_log").select("question_id",{count:"exact",head:true}).eq("user_id",user.id).gte("created_at",istDayStartISO());
   aiUsed=count||0; refreshAiLabels();
 }
 
@@ -1102,7 +1104,7 @@ function refreshAiLabels(){
   const left=Math.max(0,FREE_AI-aiUsed);
   aiButtons.forEach(b=>{ if(b.isConnected && !b.dataset.busy && !b.dataset.done) b.textContent="✨ Explain with AI ("+left+" left)"; });
   const note=$("aiNote");
-  if(note) note.textContent = aiButtons.length ? (user ? "AI explanations used: "+aiUsed+" of "+FREE_AI+" free." : "Sign in to get AI explanations (10 free).") : "";
+  if(note) note.textContent = aiButtons.length ? (user ? (aiUsed>=FREE_AI ? "Daily AI explanation quota used ("+FREE_AI+" of "+FREE_AI+"). It will reset at 11:59:59 PM tonight." : "AI explanations used today: "+aiUsed+" of "+FREE_AI+". Resets at 11:59:59 PM.") : "Sign in to get AI explanations ("+FREE_AI+" free per day).") : "";
 }
 
 function addExplanation(card, q){
@@ -1136,7 +1138,7 @@ function addExplanation(card, q){
         holder.appendChild(el("div","expl",body.explanation));
         refreshAiLabels();
       }else if(body && body.code==="limit"){
-        aiUsed=FREE_AI; btn.textContent="No free AI explanations left"; btn.dataset.done="1";
+        aiUsed=FREE_AI; btn.textContent="Daily quota used. Resets at 11:59:59 PM"; btn.dataset.done="1";
         holder.appendChild(el("div","expl",body.error)); refreshAiLabels();
       }else{
         btn.disabled=false; btn.textContent="Try again";
