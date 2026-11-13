@@ -346,6 +346,14 @@
   .aiHelp ol{margin:8px 0 12px 20px;font-size:15px;line-height:1.6}
   .aiHelp li{margin-bottom:6px}
   .aiHelp .btn{width:100%;margin-top:8px;font-size:16px;padding:14px 20px}
+  #keyModal .modal{max-width:400px;padding:16px}
+  #keyModal .modal h3{font-size:18px;margin-bottom:4px}
+  #keyModal .modal p.s{font-size:13px;margin-bottom:8px}
+  #keyModal .keyEx{font-size:13px;line-height:1.55;padding:8px 12px;margin-bottom:6px}
+  #keyModal .aiHelp{padding:12px;margin:8px 0}
+  #keyModal .aiHelp h4{font-size:15px}
+  #keyModal .aiHelp ol{font-size:13px;line-height:1.5;margin:6px 0 8px 18px}
+  #keyModal .aiHelp .btn{font-size:14px;padding:11px 16px;margin-top:6px}
   .keyEx{padding:10px 14px;margin-bottom:8px;border-radius:18px;background:rgba(255,255,255,.6);font-size:14px;line-height:1.6;box-shadow:inset 0 2px 4px rgba(140,115,110,.12)}
   /* ===== TERMS / CONSENT (added) ===== */
   .legal h4{margin:14px 0 4px;font-size:15px}
@@ -374,7 +382,7 @@
 
     <div class="hero glass">
       <h1>Crack <span class="rgb-text">Any Exam</span> with focused practice.</h1>
-      <p>Timed tests, distraction-free mode, instant results and explanations. ✨</p>
+      <p>Timed tests, distraction-free mode, instant results and explanations.</p>
     </div>
 
     <div id="examBox" class="glass hidden">
@@ -585,13 +593,14 @@
 <!-- ANSWER KEY HELP POPUP -->
 <div class="overlay hidden" id="keyModal" style="z-index:60">
   <div class="modal glass">
-    <h3>How to paste your answer key</h3>
-    <p class="s">Only a pasted (written) answer key is used. We never read answers or explanations from a PDF, even if your question PDF has them inside.</p>
-    <div class="meta" style="line-height:1.7;margin-bottom:10px">
-      Write the <b>question number first</b>, then its answer. Separate answers with a space, comma or new line.
+    <h3>📝 Paste your answer key</h3>
+    <p class="s">✅ Only pasted text is read. Answers inside the PDF are ignored.</p>
+    <div class="keyEx">
+      <b>🔢 Question number first, then the answer</b><br>
+      📘 NEET: &nbsp;1 (A) &nbsp; 2 (D) &nbsp; Q3 (B) &nbsp; 4-C<br>
+      🧮 JEE number: &nbsp;3 (80) &nbsp; Q4: 2.5<br>
+      🚫 No explanations, only answers
     </div>
-    <div class="keyEx"><b>Option type (NEET etc.)</b><br>1 (A) &nbsp; 2 (D) &nbsp; 3 (B)<br>1-A, 2-D, 3-B<br>Q1 (A) &nbsp; Q2 (D)<br>1. A &nbsp; 2. D<br>1 (3) &nbsp; 2 (1) &nbsp; (options as numbers 1 to 4)</div>
-    <div class="keyEx"><b>Numerical type (JEE etc.)</b><br>3 (80) &nbsp; 4 (2.5)<br>Q3: 80 &nbsp; Q4: 2.5<br>If your key uses letters for options, a number is read as a numerical answer.</div>
     <div class="aiHelp">
       <h4>Cannot make the answer key in this format? Let AI do it in 3 easy steps</h4>
       <ol>
@@ -603,8 +612,7 @@
       <button class="btn primary" id="aiPaste" type="button">3. PASTE INTO ANSWER BOX</button>
       <div class="msg" id="aiMsg" style="min-height:20px"></div>
     </div>
-    <div class="meta" style="margin:10px 0">Please do not paste explanations or solutions, only the answers. Questions that have no answer here will be skipped when you take the test.</div>
-    <div class="meta" style="margin-bottom:14px"><b>Thank you</b> for taking a minute to do this. It keeps your results accurate. 🙏</div>
+    <div class="meta" style="margin:8px 0 10px;text-align:center">🙏 <b>Thank you!</b> This keeps your results accurate.</div>
     <button class="btn primary" style="width:100%" id="kClose" type="button">Got it</button>
   </div>
 </div>
