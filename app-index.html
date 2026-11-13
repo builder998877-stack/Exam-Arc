@@ -383,9 +383,17 @@
         <div id="examGrid" class="grid"></div>
         <div style="margin-top:10px"><button class="btn sm hidden" id="examCancel" type="button">Cancel</button></div>
       </div>
+      <div id="classPick" class="hidden">
+        <h2 class="sec"><span>Choose your class</span></h2>
+        <div id="classGrid" class="grid"></div>
+        <div style="margin-top:10px"><button class="btn sm hidden" id="classCancel" type="button">Cancel</button></div>
+      </div>
       <div id="examBar" class="hidden">
         <div><div class="meta">Preparing for</div><b id="examName"></b></div>
-        <button class="btn sm" id="examChange" type="button">Change exam</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm" id="examChange" type="button">Change exam</button>
+          <button class="btn sm" id="classChange" type="button">Change class</button>
+        </div>
       </div>
     </div>
 
@@ -869,7 +877,7 @@ $("uSend").onclick=async()=>{
       source:"user", owner_id:user.id, is_published:false,
       process_status:"waiting", progress:0, status_text:"Waiting in line",
       question_pdf_path:folder+"question.pdf", key_pdf_path:kPath, key_text:kt||null,
-      consent_at:new Date().toISOString(), exam_id:examId||null
+      consent_at:new Date().toISOString(), exam_id:examId||null, class_id:classId||null
     }).select().single();
     if(error) throw new Error(error.message);
     const jb=await db.from("jobs").insert({test_id:t.id});
@@ -969,7 +977,7 @@ let published=[], filterType="Full", pubLoaded=false;
 async function loadPublished(){
   const box=$("testList");
   try{
-    const { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id")
+    const { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id,class_id")
       .eq("is_published",true).order("created_at",{ascending:false});
     if(error) throw error;
     published=data||[]; pubLoaded=true; drawPublished();
@@ -980,8 +988,8 @@ async function loadPublished(){
 function drawPublished(){
   if(!pubLoaded) return;
   const box=$("testList"); const frag=document.createDocumentFragment();
-  if(exams.length && !examId){ box.replaceChildren(el("div","empty glass","Choose your exam first (top of the Home page) to see its tests.")); return; }
-  const list=published.filter(t=>(t.syllabus_type||"Full")===filterType && (!exams.length || t.exam_id===examId));
+  if((exams.length && !examId) || (classes.length && !classId)){ box.replaceChildren(el("div","empty glass","Choose your exam and class first (top of the Home page) to see their tests.")); return; }
+  const list=published.filter(t=>(t.syllabus_type||"Full")===filterType && (!exams.length || t.exam_id===examId) && (!classes.length || t.class_id==null || t.class_id===classId));
   if(!list.length) frag.appendChild(el("div","empty glass","No "+(filterType==="Full"?"full":"part")+"-syllabus tests yet. Check back soon!"));
   list.forEach(t=>{
     const c=el("div","card glass click");
@@ -1198,10 +1206,11 @@ $("homeBtn").onclick=()=>show("home");
 /* ============================================================
    EXAM PICKER + FIRST-ATTEMPT RECORDS (added)
    ============================================================ */
-const EXAM_KEY="examArcExam";
+const EXAM_KEY="examArcExam", CLASS_KEY="examArcClass";
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 let exams=[], examId=parseInt(lsGet(EXAM_KEY))||null, examPicking=false, examSyncUser=null;
+let classes=[], classId=parseInt(lsGet(CLASS_KEY))||null, classPicking=false;
 let attempts={}, attemptsLoaded=false;
 
 async function loadExams(){
@@ -1210,47 +1219,74 @@ async function loadExams(){
     if(error) throw error;
     exams=data||[];
   }catch(e){ exams=[]; }
+  try{
+    const r = await db.from("classes").select("id,name").order("name");
+    classes=r.error?[]:(r.data||[]);
+  }catch(e){ classes=[]; }
   if(!exams.some(x=>x.id===examId)) examId=null;
+  if(!classes.some(x=>x.id===classId)) classId=null;
   drawExam(); drawPublished();
+}
+function tilesFor(list,activeId,onPick){
+  const frag=document.createDocumentFragment();
+  list.forEach(x=>{
+    const c=el("div","card glass click"+(x.id===activeId?" examOn":""));
+    c.appendChild(el("h3",null,x.name));
+    c.appendChild(el("div","meta",x.id===activeId?"Selected":"Tap to select"));
+    c.onclick=()=>onPick(x.id);
+    frag.appendChild(c);
+  });
+  return frag;
 }
 function drawExam(){
   const box=$("examBox");
-  if(!exams.length){ box.classList.add("hidden"); return; }
+  if(!exams.length && !classes.length){ box.classList.add("hidden"); return; }
   box.classList.remove("hidden");
-  const cur=exams.find(x=>x.id===examId), picking=!cur||examPicking;
-  $("examPick").classList.toggle("hidden",!picking);
-  $("examBar").classList.toggle("hidden",picking);
-  $("examCancel").classList.toggle("hidden",!cur);
-  if(cur) $("examName").textContent=cur.name;
-  const frag=document.createDocumentFragment();
-  exams.forEach(x=>{
-    const c=el("div","card glass click"+(x.id===examId?" examOn":""));
-    c.appendChild(el("h3",null,x.name));
-    c.appendChild(el("div","meta",x.id===examId?"Selected":"Tap to select"));
-    c.onclick=()=>chooseExam(x.id);
-    frag.appendChild(c);
-  });
-  $("examGrid").replaceChildren(frag);
+  const curE=exams.find(x=>x.id===examId), curC=classes.find(x=>x.id===classId);
+  const needE=exams.length>0 && (!curE||examPicking);
+  const needC=!needE && classes.length>0 && (!curC||classPicking);
+  $("examPick").classList.toggle("hidden",!needE);
+  $("classPick").classList.toggle("hidden",!needC);
+  $("examBar").classList.toggle("hidden",needE||needC);
+  $("examCancel").classList.toggle("hidden",!curE);
+  $("classCancel").classList.toggle("hidden",!curC);
+  $("examChange").classList.toggle("hidden",!exams.length);
+  $("classChange").classList.toggle("hidden",!classes.length);
+  $("examName").textContent=(curE?curE.name:"")+(curC?(curE?" · ":"")+curC.name:"");
+  $("examGrid").replaceChildren(tilesFor(exams,examId,chooseExam));
+  $("classGrid").replaceChildren(tilesFor(classes,classId,chooseClass));
+}
+async function saveChoice(){
+  if(!user || !examId) return;
+  try{ await db.from("user_exam").upsert({user_id:user.id,exam_id:examId,class_id:classId||null},{onConflict:"user_id"}); }catch(e){}
 }
 async function chooseExam(id){
   examId=id; examPicking=false; lsSet(EXAM_KEY,String(id));
-  drawExam(); drawPublished();
-  if(user){ try{ await db.from("user_exam").upsert({user_id:user.id,exam_id:id},{onConflict:"user_id"}); }catch(e){} }
+  drawExam(); drawPublished(); saveChoice();
+}
+async function chooseClass(id){
+  classId=id; classPicking=false; lsSet(CLASS_KEY,String(id));
+  drawExam(); drawPublished(); saveChoice();
 }
 $("examChange").onclick=()=>{ examPicking=true; drawExam(); };
 $("examCancel").onclick=()=>{ examPicking=false; drawExam(); };
+$("classChange").onclick=()=>{ classPicking=true; drawExam(); };
+$("classCancel").onclick=()=>{ classPicking=false; drawExam(); };
 async function syncExam(){
   if(!user){ examSyncUser=null; return; }
   if(examSyncUser===user.id) return;
   examSyncUser=user.id;
   try{
-    const { data } = await db.from("user_exam").select("exam_id").eq("user_id",user.id).maybeSingle();
+    const { data } = await db.from("user_exam").select("exam_id,class_id").eq("user_id",user.id).maybeSingle();
     if(data && data.exam_id){
       examId=data.exam_id; lsSet(EXAM_KEY,String(examId)); examPicking=false;
+      if(data.class_id){ classId=data.class_id; lsSet(CLASS_KEY,String(classId)); classPicking=false; }
       if(exams.length && !exams.some(x=>x.id===examId)) examId=null;
+      if(classes.length && !classes.some(x=>x.id===classId)) classId=null;
       drawExam(); drawPublished();
+      if(!data.class_id && classId) saveChoice();
     }else if(examId){
-      await db.from("user_exam").upsert({user_id:user.id,exam_id:examId},{onConflict:"user_id"});
+      saveChoice();
     }
   }catch(e){}
 }
@@ -1518,6 +1554,39 @@ wakeWorker();
       if(A.exitApp)A.exitApp();
     });
   }catch(e){}
+})();
+</script>
+<script>
+/* APP UPDATE (added): inside the Android app only. When a newer app exists, a popup appears that cannot be closed. */
+(function(){
+  var C=window.Capacitor;
+  if(!(C&&typeof C.isNativePlatform==="function"&&C.isNativePlatform()))return;
+  var BUILD=parseInt("__APP_BUILD__",10)||0;     /* filled in when the app is built; 0 = not a real build, no popup */
+  if(!BUILD)return;
+  var ov=null,last=0;
+  function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function show(r){
+    ov=document.createElement("div");ov.id="updModal";ov.className="overlay";ov.style.zIndex="120";ov.style.alignItems="center";
+    ov.innerHTML='<div class="modal glass" style="text-align:center">'+
+      '<h3>Update available</h3>'+
+      '<p class="s">A newer version of Exam-Arc is ready. Please update to keep using the app.</p>'+
+      (r.notes?'<p class="s" style="color:var(--text)">'+esc(r.notes)+'</p>':'')+
+      '<p class="s">Tap Update now, open the downloaded file and press Install. Your account and progress are kept.</p>'+
+      '<a class="btn primary" style="display:block;text-decoration:none;text-align:center" target="_blank" rel="noopener" href="'+esc(r.apk_url)+'">Update now</a></div>';
+    document.body.appendChild(ov);
+  }
+  function check(force){
+    if(!force&&Date.now()-last<600000)return;last=Date.now();
+    try{
+      db.from("app_release").select("build,apk_url,notes").eq("id",1).maybeSingle().then(function(res){
+        var d=res&&res.data;
+        if(!d||!/^https:\/\//.test(d.apk_url||"")||!(d.build>BUILD)){if(ov){ov.remove();ov=null;}return;}
+        if(!ov)show(d);
+      },function(){});
+    }catch(e){}
+  }
+  check(true);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)check(false);});
 })();
 </script>
 </body>
