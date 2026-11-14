@@ -428,6 +428,7 @@
     </div>
 
     <h2 class="sec"><span>Available Tests</span></h2>
+    <div id="seriesBox" class="hidden" style="margin-bottom:12px"></div>
     <div class="tabs">
       <button class="tab on" data-f="Full">Full syllabus</button>
       <button class="tab" data-f="Part">Part syllabus</button>
@@ -984,13 +985,50 @@ setInterval(()=>{ if(minePending && user && !document.hidden && !$("home").class
    AVAILABLE TESTS (Full / Part syllabus)
    ============================================================ */
 let published=[], filterType="Full", pubLoaded=false;
+/* ---- TEST SERIES directory (exam > class > series > full/part). Managed only by the admin. ---- */
+let seriesList=[], seriesId=null;
+function drawSeries(base){
+  const box=document.getElementById("seriesBox"); if(!box) return;
+  const counts={}; base.forEach(t=>{ if(t.series_id!=null) counts[t.series_id]=(counts[t.series_id]||0)+1; });
+  const vis=seriesList.filter(s=>counts[s.id]);
+  if(seriesId!=null && !counts[seriesId]) seriesId=null;
+  if(!vis.length){ box.classList.add("hidden"); box.replaceChildren(); return; }
+  const frag=document.createDocumentFragment();
+  if(seriesId==null){
+    const m=el("div","meta","Test series: pick one to see only its tests"); m.style.margin="0 6px 10px"; frag.appendChild(m);
+    const g=el("div","grid");
+    vis.forEach(s=>{
+      const c=el("div","card glass click");
+      c.appendChild(el("h3",null,s.name));
+      c.appendChild(el("div","meta",counts[s.id]+" test"+(counts[s.id]===1?"":"s")));
+      c.onclick=()=>{ seriesId=s.id; drawPublished(); };
+      g.appendChild(c);
+    });
+    frag.appendChild(g);
+  }else{
+    const s=vis.find(x=>x.id===seriesId);
+    const bar=el("div","glass"); bar.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 16px";
+    const l=el("div"); l.appendChild(el("div","meta","Test series")); l.appendChild(el("b",null,s?s.name:""));
+    const back=el("button","btn sm","← All tests"); back.type="button";
+    back.onclick=()=>{ seriesId=null; drawPublished(); };
+    bar.appendChild(l); bar.appendChild(back); frag.appendChild(bar);
+  }
+  box.replaceChildren(frag); box.classList.remove("hidden");
+}
+
 async function loadPublished(){
   const box=$("testList");
   try{
-    const { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id,class_id")
+    let { data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id,class_id,series_id")
       .eq("is_published",true).order("created_at",{ascending:false});
+    if(error){
+      ({ data, error } = await db.from("tests").select("id,name,syllabus_type,syllabus_chapters,duration_minutes,exam_id,class_id")
+        .eq("is_published",true).order("created_at",{ascending:false}));
+    }
     if(error) throw error;
-    published=data||[]; pubLoaded=true; drawPublished();
+    published=data||[];
+    try{ const sr=await db.from("series").select("id,name").order("name"); seriesList=(sr && !sr.error && sr.data)||[]; }catch(e){ seriesList=[]; }
+    pubLoaded=true; drawPublished();
   }catch(e){
     box.replaceChildren(el("div","empty glass","Could not load tests. Please check your internet and refresh."));
   }
@@ -998,8 +1036,10 @@ async function loadPublished(){
 function drawPublished(){
   if(!pubLoaded) return;
   const box=$("testList"); const frag=document.createDocumentFragment();
-  if((exams.length && !examId) || (classes.length && !classId)){ box.replaceChildren(el("div","empty glass","Choose your exam and class first (top of the Home page) to see their tests.")); return; }
-  const list=published.filter(t=>(t.syllabus_type||"Full")===filterType && (!exams.length || t.exam_id===examId) && (!classes.length || t.class_id==null || t.class_id===classId));
+  if((exams.length && !examId) || (classes.length && !classId)){ box.replaceChildren(el("div","empty glass","Choose your exam and class first (top of the Home page) to see their tests.")); const sb=document.getElementById("seriesBox"); if(sb) sb.classList.add("hidden"); return; }
+  const base=published.filter(t=>(!exams.length || t.exam_id===examId) && (!classes.length || t.class_id==null || t.class_id===classId));
+  drawSeries(base);
+  const list=base.filter(t=>(t.syllabus_type||"Full")===filterType && (seriesId==null || t.series_id===seriesId));
   if(!list.length) frag.appendChild(el("div","empty glass","No "+(filterType==="Full"?"full":"part")+"-syllabus tests yet. Check back soon!"));
   list.forEach(t=>{
     const c=el("div","card glass click");
@@ -1511,7 +1551,7 @@ wakeWorker();
   function tag(el,p){if(el)el.setAttribute("data-pane",p);}
   tag(home.querySelector(".hero"),"home");tag(h2s[0],"home");tag(grids[0],"home");
   tag(h2s[1],"tests");tag(home.querySelector(".tabs"),"tests");tag(g("testList"),"tests");
-  tag(g("mineWrap"),"papers");tag(g("examBox"),"home");
+  tag(g("seriesBox"),"tests");tag(g("mineWrap"),"papers");tag(g("examBox"),"home");
 
   var pane="home",navs=[].slice.call(document.querySelectorAll(".navb"));
   function replay(el){el.classList.remove("paneIn");void el.offsetWidth;el.classList.add("paneIn");}
